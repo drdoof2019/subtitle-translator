@@ -378,7 +378,18 @@ export const parseRetryAfterMs = (header: string | null): number | undefined => 
  * path so a non-JSON error body still produces a clean status-based message).
  */
 export const fetchJSON = async (url: string, init?: RequestInit): Promise<unknown> => {
-  const response = await fetch(url, init);
+    const modifiedHeaders = new Headers(init?.headers);
+
+    // OpenCode Go requires x-opencode-session for efficient routing
+    if (url.includes("opencode.ai")) {
+      modifiedHeaders.set("x-opencode-session", "sub-sess-" + Math.random().toString(36).slice(2));
+      modifiedHeaders.set("x-opencode-client", "subtitle-translator");
+    }
+
+    const response = await fetch(url, {
+      ...init,
+      headers: modifiedHeaders,
+    });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
     // Attach the HTTP status as a property: retry.ts's classification reads
