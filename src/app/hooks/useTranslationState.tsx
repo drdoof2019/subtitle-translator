@@ -103,6 +103,11 @@ const useTranslationState = () => {
   // setting merged into runtimeConfig at translate time, which is what keeps
   // it under the run-snapshot rule (mid-run edits can't affect the live run).
   const [relayBase, setRelayBase] = useLocalStorage<string>("translation-relayBase", "");
+  // 全局「强制 API 中转」:开 = 所有【有中转能力】的 provider(defaults 里有
+  // useRelay 字段者)一律走 relay,绕开浏览器 CORS;关 = 行为与此开关存在前
+  // 逐位相同。合并发生在 getSelectedConfig 这一个咽喉(与 relayBase 同款),
+  // 所以翻译主链路、Test、探测、状态徽章天然拿到同一个 effective 值。
+  const [forceRelay, setForceRelay] = useLocalStorage<boolean>("translation-forceRelay", false);
   const [translatedText, setTranslatedText] = useState<string>("");
   // Line-level soft-failure: lines still failing after retries exhaust.
   // UI shows Alert with retry button; cache hits skip re-translation.
@@ -268,6 +273,7 @@ const useTranslationState = () => {
         retryCount,
         requestTimeoutSec,
         relayBase,
+        forceRelay,
         removeChars,
       });
       message.success(t("exportSettingSuccess"));
@@ -299,6 +305,7 @@ const useTranslationState = () => {
       // sanitizeSettings 已经把非 http(s) 的 relayBase 丢掉了(它决定 apiKey
       // 发到哪台机器),到这里的值要么合法要么不存在。
       if (settings.relayBase !== undefined) setRelayBase(settings.relayBase);
+      if (settings.forceRelay !== undefined) setForceRelay(settings.forceRelay);
       if (settings.removeChars !== undefined) setRemoveChars(settings.removeChars);
       message.success(t("importSettingSuccess"));
     }).catch((error) => {
@@ -354,7 +361,13 @@ const useTranslationState = () => {
     // Merge defaults in without resetting user choices. migrateConfig is idempotent
     // and side-effect free — safe to call during render. localStorage gets
     // written back next time the user changes a setting.
-    return { ...migrateConfig(existingConfig, defaultConfig), relayBase };
+    const merged = { ...migrateConfig(existingConfig, defaultConfig), relayBase };
+    // 全局强制中转:只盖【有 useRelay 字段】的 provider —— 判据与界面渲染那个
+    // Switch 的 `config?.useRelay !== undefined` 同源(registry.isRelayCapable)。
+    // 没有该字段的服务(Gemini/MT 各家)根本没有 relay 路由,盖了也无处可去。
+    // 写回无污染:merged 只喂 wire,translationConfigs 存储不动。
+    if (forceRelay && merged.useRelay !== undefined) merged.useRelay = true;
+    return merged;
   };
 
   // Language management
@@ -991,6 +1004,8 @@ const useTranslationState = () => {
     setRequestTimeoutSec,
     relayBase,
     setRelayBase,
+    forceRelay,
+    setForceRelay,
     validate,
     llmPresets,
     activeLlmPresetId,

@@ -19,11 +19,14 @@ import {
   getProviderModels,
   canDisableThinkingForModel,
   classifyEndpointUrl,
+  isUserSuppliedEndpoint,
   migrateConfig,
   categorizedOptions,
   wireUrlNormalizer,
   usesBuiltinRelay,
+  usesLocalRelay,
   LLM_RELAY_BASE,
+  LOCAL_RELAY_PATH,
   isValidRelayBase,
   supportsGlossary,
   type ReasoningEffort,
@@ -64,6 +67,7 @@ const ServiceSettingsForm = ({ service }: { service: string }) => {
     requestTimeoutSec,
     relayBase,
     setRelayBase,
+    forceRelay,
   } = useTranslationContext();
 
   const [testingService, setTestingService] = useState<string | null>(null);
@@ -84,6 +88,22 @@ const ServiceSettingsForm = ({ service }: { service: string }) => {
   const urlKind = classifyEndpointUrl(service, config?.url as string | undefined).kind;
   // 空 = 用内置中转,不算错;非空但不合法(漏 https://、javascript: 等)才标红。
   const relayBaseInvalid = relayBase.trim() !== "" && !isValidRelayBase(relayBase);
+  // 全局「强制中转」开着,但这个服务【实际】走不了内置中转:地址由用户掌控
+  // (本地运行时 / 自建网关),内置 Worker 没有声明过它(relayWouldServe 判否)。
+  // 界面必须说实话:开关显示为开,而请求照旧直连 —— 不说,用户会以为开了就有用。
+  const globalRelayForced = forceRelay && config?.useRelay !== undefined;
+  // dev/Docker 下内置中转 = 本机 relay route(服务器侧 fetch,任意 http(s) 端点
+  // 都能转发),这条「内置转发不了自定义地址」的实话在【公共 Worker】形态下
+  // 才成立 —— 本机形态下说它就是撒谎。判据与 registry.relayWouldServe 同源。
+  const builtinRelayCannotServe = usesBuiltinRelay(relayBase) && !usesLocalRelay(relayBase) && isUserSuppliedEndpoint(service, config?.url as string | undefined);
+  const effectiveUseRelay = globalRelayForced || config?.useRelay === true;
+  const relaySwitchExtra = globalRelayForced
+    ? builtinRelayCannotServe
+      ? t("forceRelayBuiltinNoCustom")
+      : t("forceRelayForced")
+    : urlKind === "custom" && usesBuiltinRelay(relayBase) && !usesLocalRelay(relayBase)
+      ? t("useRelayCustomUrl")
+      : t("useRelayTooltip");
 
   // Thinking-effort visibility: per-model gate via `models[].thinking: true`
   // in registry. State stored per-model in `config.thinkingEffort[sku]` where
@@ -183,9 +203,11 @@ const ServiceSettingsForm = ({ service }: { service: string }) => {
       setTestingService(service);
       // 共用入口统一处理超时(= requestTimeoutSec,与正式翻译同源)与
       // thinking 参数派生 —— 原则与实现都在 testTranslationWithTimeout。
-      // 手动并 relayBase:本表单操作的是【任意】service(不限当前选中),走不了
-      // getSelectedConfig 咽喉 —— 全仓唯一需要手动合并的消费者。
-      const { error: testError, timedOut } = await testTranslationWithTimeout(service, { ...config, relayBase }, requestTimeoutSec, isLLMModel ? systemPrompt : undefined, isLLMModel ? userPrompt : undefined);
+      // 手动并 relayBase + forceRelay:本表单操作的是【任意】service(不限当前
+      // 选中),走不了 getSelectedConfig 咽喉 —— 全仓唯一需要手动合并的消费者。
+      // 合并规则与咽喉逐字一致:只盖有 useRelay 字段的 provider。
+      const testConfig = { ...config, relayBase, ...(forceRelay && config?.useRelay !== undefined && { useRelay: true }) };
+      const { error: testError, timedOut } = await testTranslationWithTimeout(service, testConfig, requestTimeoutSec, isLLMModel ? systemPrompt : undefined, isLLMModel ? userPrompt : undefined);
       if (!testError) {
         message.success(`${currentService?.label || service} - ${t("testConfigSuccess")}`);
       } else {
@@ -567,15 +589,26 @@ const ServiceSettingsForm = ({ service }: { service: string }) => {
               // 说明这时开关对内置公共中转不起作用(该地址不在它的 allowlist 里,
               // 引擎会退回直连、也不会把地址发过去 —— 见 registry.relayWouldServe),
               // 要经中转就填自建中转地址。是提示,不是禁用:填了自建地址后开关照常生效。
-              <Form.Item label={t("useRelay")} htmlFor={`${service}-useRelay`} extra={urlKind === "custom" && usesBuiltinRelay(relayBase) ? t("useRelayCustomUrl") : t("useRelayTooltip")} style={{ marginBottom: config.useRelay ? 24 : 0 }}>
-                <Switch id={`${service}-useRelay`} checked={config.useRelay as boolean | undefined} onChange={(checked) => handleConfigChange(service, "useRelay", checked)} aria-label={t("useRelay")} />
+              // ⚠ 例外:全局「强制中转」开着时本开关【置灰且显示为开】—— 那时
+              // wire 上的值由全局设置决定,这里可点但点了没用(getSelectedConfig
+              // 会盖掉),灰掉 + 说明文字才是诚实的状态展示。
+              <Form.Item label={t("useRelay")} htmlFor={`${service}-useRelay`} extra={relaySwitchExtra} style={{ marginBottom: effectiveUseRelay ? 24 : 0 }}>
+                <Switch id={`${service}-useRelay`} checked={effectiveUseRelay} disabled={globalRelayForced} onChange={(checked) => handleConfigChange(service, "useRelay", checked)} aria-label={t("useRelay")} />
               </Form.Item>
             )}
+            {/* 全局强制中转开着、但这个服务没有中转能力(Gemini / 各家 MT /
+                Azure...):开关无处可去,直说,别让「全局开了」被理解成「它也在走」。 */}
+            {forceRelay && config?.useRelay === undefined && (
+              <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+                {t("forceRelayNoRoute")}
+              </Text>
+            )}
             {/* 中转地址:全局值(不进 per-provider config),只在开关打开时才露出 ——
-                关着时它对本次配置毫无影响,常驻只会让人以为改了有用。文案明写
-                "对所有 provider 生效",因为它长在 per-provider 表单里,不说清楚
+                关着时它对本次配置毫无影响,常驻只会让人以为改了有用。全局强制
+                中转开着时同样露出:那时它是【唯一】能让自定义/本地地址走中转的路。
+                文案明写 "对所有 provider 生效",因为它长在 per-provider 表单里,不说清楚
                 会被当成只管当前这个。 */}
-            {config?.useRelay === true && (
+            {effectiveUseRelay && (
               // 非法值(最常见:漏写 https://)当场标红并说明 —— 否则 relayUrl
               // 会静默回落内置中转,用户以为自建生效了,而任何报错都不指向
               // 「少了协议头」。判据与导入/运行时同一份(isValidRelayBase)。
@@ -583,7 +616,11 @@ const ServiceSettingsForm = ({ service }: { service: string }) => {
                 <Input
                   value={relayBase}
                   onChange={(e) => setRelayBase(e.target.value)}
-                  placeholder={LLM_RELAY_BASE}
+                  // 空 = 内置中转,而内置【在哪台机器】随部署形态变:dev/Docker
+                  // 下是同源本机 relay route,静态导出下才是公共 Worker。placeholder
+                  // 必须说当前形态的真话 —— 在 dev 里印公共 Worker 的域名,正是
+                  // 「把 key 送到用户正要避开的机器」那条事故链的第一环。
+                  placeholder={usesLocalRelay(relayBase) ? LOCAL_RELAY_PATH : LLM_RELAY_BASE}
                   aria-label={t("relayBase")}
                   spellCheck={false}
                   allowClear

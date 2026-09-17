@@ -389,7 +389,11 @@ const main = async (): Promise<number> => {
   // baseConfig 已经过 migrateConfig,它会把 registry 的 defaultUseRelay 回填
   // 进来(实测 tokenhub → true)。拿它当默认等于给 tokenhub/opencode 静默开启
   // 中转,而 Node 没有 CORS、这里本该默认直连 —— 正是这一条要防的事。
-  baseConfig.useRelay = triState(args.relay, args["no-relay"], settings.translationConfigs?.[method]?.useRelay ?? false);
+  // settings.forceRelay(网页端的全局「强制中转」,随设置文件导出)并入默认值:
+  // 用户在浏览器里表达过这个意图,CLI 跟随;显式 flag 仍然赢(triState 契约不变)。
+  // 无 relay 能力的 provider 不受影响 —— 服务层根本不读 params.useRelay。
+  const storedRelayDefault = settings.forceRelay === true || settings.translationConfigs?.[method]?.useRelay === true;
+  baseConfig.useRelay = triState(args.relay, args["no-relay"], storedRelayDefault);
 
   // 翻译前校验。不校验就开跑的失败模式都是【静默错文件】:缺 key 烧完全部
   // 重试预算后整份保持原文、translategemma 收到 auto 源必然报错、源=目标被

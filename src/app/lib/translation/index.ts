@@ -17,7 +17,7 @@ export * from "./languages-data";
 export * from "./utils";
 export * from "./pipeline";
 export { translationServices } from "./services";
-export { completeOpenAICompatUrl, RELAY_HINT_MARKER, LLM_RELAY_BASE, isValidRelayBase, usesBuiltinRelay } from "./services/shared";
+export { completeOpenAICompatUrl, RELAY_HINT_MARKER, LLM_RELAY_BASE, isValidRelayBase, usesBuiltinRelay, usesLocalRelay, LOCAL_RELAY_PATH } from "./services/shared";
 
 
 /**

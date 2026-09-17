@@ -5,6 +5,7 @@ import { ConfigProvider, Flex, Input, InputNumber, Row, Col, Switch, Form } from
 import { useTranslations } from "next-intl";
 import Section from "@/app/components/styled/Section";
 import ToggleRow from "@/app/components/styled/ToggleRow";
+import { useTranslationContext } from "@/app/components/TranslationContext";
 
 interface AdvancedTranslationSettingsProps {
   // Export filename
@@ -48,6 +49,9 @@ const AdvancedTranslationSettings: React.FC<AdvancedTranslationSettingsProps> = 
   setSingleFileMode,
 }) => {
   const t = useTranslations("common");
+  // 全局强制中转:状态住在 useTranslationState,和 relayBase 同一对键 —— 这里
+  // 直接取上下文而不是加两个 props,调用方(唯一一处)不用跟着改签名。
+  const { forceRelay, setForceRelay } = useTranslationContext();
 
   return (
     // ConfigProvider componentDisabled:一点锁全(Switch/InputNumber/Input 与
@@ -72,6 +76,11 @@ const AdvancedTranslationSettings: React.FC<AdvancedTranslationSettingsProps> = 
 
       {/* 2. Network / Resilience */}
       <Section noGap>
+        <Flex vertical gap="small" style={{ paddingBottom: 12 }}>
+          <ToggleRow label={t("forceRelay")} tooltip={t("forceRelayTooltip")}>
+            <Switch size="small" checked={forceRelay} onChange={setForceRelay} aria-label={t("forceRelay")} />
+          </ToggleRow>
+        </Flex>
         <Form layout="vertical" component="div">
           <Row gutter={16}>
             <Col span={12}>

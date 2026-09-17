@@ -21,6 +21,15 @@ const useLocalApi = process.env.NODE_ENV === "development" || process.env.NEXT_P
 // the upstream directly.
 export const LLM_RELAY_BASE = "https://llm-proxy.api2026.workers.dev";
 
+// 本地 server-side relay(dev / Docker standalone 下的【内置中转】):同源 route
+// handler,路径形态与 Worker 契约一致 —— /api/relay/{provider}?endpoint={url}。
+// 实现见 src/app/api/relay/[provider]/route.ts;选择逻辑与 PROXY_ENDPOINTS
+// 同一判据(useLocalApi):服务器在用户机器上跑着,route 就存在,公共 Worker
+// 那趟第三方就不必经过 —— key 留在本机,且它能转发【任意】http(s) 端点
+// (公共 Worker 只能转发自己声明过的),Custom 地址的 CORS 死结由此解开。
+// 静态导出 production 没有 route handler —— 内置仍是公共 Worker,行为不变。
+export const LOCAL_RELAY_PATH = "/api/relay";
+
 /**
  * Build the relay URL for a provider key (e.g. `relayUrl("openai")`).
  *
@@ -51,7 +60,9 @@ const relayBaseUrl = (provider: string, base?: string): string => {
   // search/hash 的 base,那条路走不到了 —— 但"用产物拼"这条纪律仍然要守:
   // 下一个被加进 normalizeRelayBase 的规范化步骤同样得作用于拼接。)
   const trimmed = base?.trim();
-  if (!trimmed) return `${LLM_RELAY_BASE}/api/${provider}`;
+  // 空 = 内置中转。内置【是哪台机器】随部署形态而变(见 LOCAL_RELAY_PATH 注释):
+  // dev/Docker = 本机 relay route;静态导出 = 公共 Worker。
+  if (!trimmed) return useLocalApi ? `${LOCAL_RELAY_PATH}/${provider}` : `${LLM_RELAY_BASE}/api/${provider}`;
   const normalized = normalizeRelayBase(trimmed);
   // ⚠ 【非空但不合法 ≠ 没填】,绝不静默回落到内置中转。这个字段决定 apiKey
   // 发到【哪台机器】:自建中转的用户填错(把 base 写成 `…/api`、漏掉 scheme)
@@ -269,6 +280,15 @@ export const usesBuiltinRelay = (base?: string): boolean => {
   const trimmed = base?.trim();
   return !trimmed || canonicalEndpoint(trimmed) === canonicalEndpoint(LLM_RELAY_BASE);
 };
+
+/**
+ * 「当前这次请求的内置中转是不是【本机】relay route」。dev/Docker 下空 base
+ * 打到 LOCAL_RELAY_PATH —— 服务器侧 fetch,能转发任意 http(s) 端点,不经过
+ * 任何第三方。registry.relayWouldServe 的「用户自填地址不发公共 Worker」
+ * 护栏在这个形态下没有保护对象(那台机器就是用户自己的),据此放行;
+ * 静态导出下内置仍是公共 Worker,护栏照常生效。
+ */
+export const usesLocalRelay = (base?: string): boolean => useLocalApi && usesBuiltinRelay(base);
 
 // ============================================================================
 // Network-error hint markers

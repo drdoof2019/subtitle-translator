@@ -577,13 +577,19 @@ export const nvidia: TranslationService = async (params) => {
 };
 
 export const llm: TranslationService = async (params) => {
-  const { apiKey, url, model, temperature, sendSystemPrompt, maxTokens } = params;
+  const { apiKey, url, model, temperature, sendSystemPrompt, maxTokens, useRelay, relayBase } = params;
   const { effectiveSystemPrompt, prompt } = preparePrompts(params);
 
   const serviceName = "Custom (OpenAI-compatible)";
   // Belt-and-suspenders: UI auto-completes on blur, but settings imported from
   // file or edited via localStorage may bypass that — re-normalize here.
-  const apiEndpoint = completeOpenAICompatUrl(requireUrl(serviceName, url));
+  // resolveWireEndpoint 内含同一补全(wireUrlNormalizer("llm") =
+  // completeOpenAICompatUrl),并在 useRelay + 自建 relayBase 时改打
+  // {relayBase}/api/llm?endpoint=<url>。内置公共中转由 relayWouldServe 挡掉
+  // (URL_IS_PRIMARY_CRED:没有官方上游可转发),永远直连。
+  // requireUrl 先行:空 url 是【没配地址】,报清楚的错,不能让 allowlist 芯片
+  // (LM Studio 等)替用户猜一个。
+  const apiEndpoint = resolveWireEndpoint("llm", { url: requireUrl(serviceName, url), useRelay, relayBase });
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey?.trim()) {

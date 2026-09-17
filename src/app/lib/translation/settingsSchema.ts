@@ -35,6 +35,13 @@ export interface TranslationSettings {
   requestTimeoutSec?: number;
   /** User's own relay origin; empty = built-in. Sanitized hard — see below. */
   relayBase?: string;
+  /**
+   * 全局「强制 API 中转」(浏览器 CORS 逃生口)。不进 RuntimeGlobals:它不是
+   * 随请求转发的线格式旋钮,而是【壳层的合并指令】—— 网页壳在
+   * getSelectedConfig、CLI 壳在 triState 默认值处各自并入 useRelay,判据同为
+   * 「该 provider 的 defaults 里有没有 useRelay 字段」。
+   */
+  forceRelay?: boolean;
   removeChars?: string;
   exportDate?: string;
   version?: string;
@@ -78,6 +85,7 @@ const FIELD_KINDS: Record<keyof Omit<TranslationSettings, "translationMethod" | 
   retryCount: "number",
   requestTimeoutSec: "number",
   relayBase: "string",
+  forceRelay: "boolean",
   removeChars: "string",
   exportDate: "string",
   version: "string",
@@ -129,6 +137,10 @@ export const sanitizeSettings = (settings: TranslationSettings): TranslationSett
     for (const cfg of Object.values(out.translationConfigs ?? {})) {
       if (cfg && typeof cfg === "object" && "useRelay" in cfg) delete (cfg as Record<string, unknown>).useRelay;
     }
+    // forceRelay 同一条理由一起丢:留着它,网页壳会把每个有中转能力的 provider
+    // 全部强制走【内置公共中转】(空 base 的语义)—— 正是上面关掉 useRelay 要
+    // 防的那件事,换了个开关名重演。
+    delete out.forceRelay;
   }
 
   // per-provider 的数值同样要查。上面那段注释一直宣称「越界一律丢字段,不会流进

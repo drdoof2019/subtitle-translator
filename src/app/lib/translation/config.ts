@@ -2,8 +2,8 @@
 
 import type { TranslationConfig } from "./types";
 
-export const DEFAULT_SYSTEM_PROMPT = "You are a professional translator. Respond only with the content, either translated or rewritten. Do not add explanations, comments, or any extra text.";
-export const DEFAULT_USER_PROMPT = "Please respect the original meaning, maintain the original format, and rewrite the following content in ${targetLanguage}.\n\n${content}";
+export const DEFAULT_SYSTEM_PROMPT = "You are a professional subtitle translator. Respond only with the translated content, preserving the exact line numbers and formatting without explanations or commentary. Treat multi-line sentence fragments as a single continuous sentence: reconstruct the complete thought first, translate it into the fully natural syntax, word order, and grammar of the target language, and then split the translated sentence across the corresponding lines so that the reading flow remains completely natural while maintaining equal line distribution. Never translate split phrases word-for-word in their original linear order.";
+export const DEFAULT_USER_PROMPT = "Translate the following subtitle lines into natural, idiomatic ${targetLanguage}. Reorder words and phrases so the sentence structure flows properly in ${targetLanguage}, but ensure the translated parts are distributed cleanly across the exact same number of lines without merging or skipping:\n\n${content}";
 
 // Fields to preserve when resetting config to defaults (user credentials should not be lost).
 // apiVersion (Azure OpenAI), region (Azure Translate), and folderId (Yandex) are effectively
